@@ -143,17 +143,24 @@ export default function Upload() {
         })}
       >
         <h2 className="text-xl font-semibold">
-          URL de vídeo público — experimental
+          Transcrever vídeo público por link
         </h2>
         <p className="my-3 text-sm text-slate-600">
-          YouTube, TikTok e Instagram. Requer o adaptador experimental Docker
-          habilitado. Pré-requisitos e bloqueios da plataforma serão informados;
-          não contornamos login, DRM ou acesso privado. Prefira upload.
+          Cole o link de um vídeo público do YouTube. TikTok e Instagram também
+          têm suporte experimental. O download requer o adaptador Docker
+          habilitado e pode ser recusado pela plataforma. Não contornamos login,
+          DRM ou acesso privado.
         </p>
         <label className="block" htmlFor="url">
-          URL pública
+          Link do vídeo público
         </label>
-        <input id="url" className="my-2 w-full" {...form.register("url")} />
+        <input
+          id="url"
+          type="url"
+          placeholder="https://www.youtube.com/watch?v=…"
+          className="my-2 w-full"
+          {...form.register("url")}
+        />
         <p className="text-sm text-red-800">
           {form.formState.errors.url?.message}
         </p>

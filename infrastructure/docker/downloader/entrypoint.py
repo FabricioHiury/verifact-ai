@@ -27,6 +27,8 @@ options = {
     "quiet": True,
     "no_warnings": True,
     "cachedir": False,
+    "js_runtimes": {"node": {"path": "/usr/local/bin/node"}},
+    "remote_components": set(),
     "skip_unavailable_fragments": False,
     "overwrites": False,
     "allowed_extractors": [

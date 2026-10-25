@@ -87,12 +87,15 @@ Logs locais de subprocessos podem conter diagnósticos e caminhos; não publique
 sem revisar. Não há exclusão automática de dados. Faça backup e remova dados locais
 somente após conferir referências, checkpoints e objetos MinIO.
 
-URLs sociais são experimentais e desativadas por padrão. Execute `make setup-social`,
+URLs sociais são experimentais e desativadas por padrão em instalações novas. Nesta
+instalação o adaptador foi habilitado no .env. Execute `make setup-social`,
 configure SOCIAL_DOWNLOAD_ENABLED=true e reinicie o worker para tentar obtenção pública.
 O downloader fica em rede Docker interna, sem saída direta; um proxy CONNECT bloqueia
-IPs internos e fixa o endereço público validado. Esse isolamento foi testado; uma
-amostra YouTube tentou acesso e retornou vídeo indisponível, sem bypass. Não há
-validação bem-sucedida de download nas três plataformas. A análise pausa com motivo
+IPs internos e fixa o endereço público validado. Esse isolamento foi testado. O downloader inclui Node.js 24
+(imagem oficial fixada por digest), yt-dlp 2026.10.21 e o componente EJS. O download
+real de Big Buck Bunny no YouTube gerou MP3 e SHA-256; uma amostra anterior retornou
+vídeo indisponível, sem bypass. A transcrição integral de vídeo por link e downloads
+nas outras duas plataformas ainda não foram validados. A análise pausa com motivo
 explícito em falhas; upload MP3/MP4 continua sendo o caminho validado. Não há bypass de
 login, DRM, paywall ou conteúdo privado. Fontes HTML/texto são suportadas; documentos
 PDF de terceiros ainda não são extraídos. Fontes podem negar acesso ou mudar.
@@ -132,3 +135,23 @@ O build MinIO por código-fonte foi concluído após limpar imagens e caches de 
 projetos, com autorização do mantenedor. A tentativa de aumentar o disco para 120 GB
 não foi aplicada porque qemu-img não estava instalado; o valor de configuração foi
 restaurado para os 100 GB originais. Nenhum volume de dados foi excluído.
+
+
+## Processamento por ideias completas
+
+O Flow alterna cada chunk de transcrição e diarização com extração contextual e
+checagem, sempre sequencialmente. O último trecho aguarda continuação; pontuação,
+pausas de pelo menos 1,5 segundo e conectivos propõem fronteiras, e o LLM valida a conclusão da ideia antes de admitir
+as afirmações. Ideias incompletas ou que excedem 4000 caracteres não são cortadas
+para pesquisa: ficam com limitação explícita. Contexto original e intervalo de
+origem são auditáveis na interface e nos relatórios. Isso é uma heurística, sem
+benchmark de ganho de precisão. Clusters entre chunks ainda exigem revisão humana.
+
+Após adicionar o token, mantenha `DIARIZATION_ENABLED=true` e use `make dev` ou
+`make dev-worker`, sem sobrescrever essa variável com false. O Community-1 já
+executou nesta máquina em uma amostra curta. Análises históricas no modo degradado
+não são convertidas silenciosamente: crie uma nova análise para obter diarização e
+os novos checkpoints por ideia quando as versões antigas forem incompatíveis.
+
+A migration `20261025_idea_spans` é aditiva; rode `make migrate` antes de iniciar
+API/worker atualizados. Não exclui afirmações ou relatórios anteriores.

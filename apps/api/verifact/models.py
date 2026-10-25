@@ -62,7 +62,7 @@ class Analysis(Entity):
     error_code: Mapped[str | None] = mapped_column(String(64))
     error: Mapped[str | None] = mapped_column(Text)
     limitations: Mapped[list[str]] = mapped_column(JSON, default=list)
-    pipeline_version: Mapped[str] = mapped_column(String(40), default="1")
+    pipeline_version: Mapped[str] = mapped_column(String(40), default="2-ideas")
     revision: Mapped[int] = mapped_column(default=1)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -111,6 +111,8 @@ class Claim(Entity):
     __table_args__ = (UniqueConstraint("analysis_id", "segment_id", "statement"),)
     analysis_id: Mapped[str] = mapped_column(ForeignKey("analyses.id"), index=True)
     segment_id: Mapped[str] = mapped_column(ForeignKey("transcript_segments.id"))
+    end_segment_id: Mapped[str | None] = mapped_column(ForeignKey("transcript_segments.id"))
+    transcript_context: Mapped[str] = mapped_column(Text, default="", server_default="")
     statement: Mapped[str] = mapped_column(Text)
     context: Mapped[str] = mapped_column(Text, default="")
     topic: Mapped[str] = mapped_column(String(120), default="")

@@ -55,6 +55,8 @@ test("isolated synthetic fixture: transcript, uncertainty and manual naming", as
           {
             id: "claim-1",
             statement: "Afirmação sintética para teste.",
+            transcript_context:
+              "Este é o contexto completo. Afirmação sintética para teste.",
             context: "Fixture isolada",
             topic: "Teste",
             start_time: 12,
@@ -79,6 +81,15 @@ test("isolated synthetic fixture: transcript, uncertainty and manual naming", as
   ).toBeVisible();
   await expect(
     page.getByRole("article").getByText("Inconclusivo", { exact: true }),
+  ).toBeVisible();
+  await page.getByText("Contexto original da fala", { exact: true }).click();
+  await expect(
+    page.getByText(
+      "Este é o contexto completo. Afirmação sintética para teste.",
+      {
+        exact: true,
+      },
+    ),
   ).toBeVisible();
   await page.getByText("Evidências e fontes (0)").click();
   await expect(page.getByText(/Isso não demonstra falsidade/)).toBeVisible();

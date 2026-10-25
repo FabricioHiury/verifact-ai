@@ -6,7 +6,7 @@ from celery.signals import worker_ready
 from sqlalchemy import select, text
 from verifact.config import settings
 from verifact.db import engine, factory
-from verifact.models import Analysis, Status
+from verifact.models import Analysis, AnalysisCancelled, Status
 
 from verifact_worker.celery_app import app
 from verifact_worker.media import PrerequisiteError
@@ -16,7 +16,7 @@ LOCK_ID = 734081921
 
 @app.task(name="verifact.process", bind=True, max_retries=2)
 def process(self: Any, analysis_id: str) -> None:
-    from verifact_worker.pipeline import Cancelled, Pipeline
+    from verifact_worker.pipeline import Pipeline
 
     cfg = settings()
     cfg.media_temp_dir.mkdir(parents=True, exist_ok=True)
@@ -42,7 +42,7 @@ def process(self: Any, analysis_id: str) -> None:
                     cleanup_orphans()
                 Pipeline(analysis_id, lock.fileno()).kickoff()
                 state, error_code, message = Status.COMPLETED, None, None
-            except Cancelled:
+            except AnalysisCancelled:
                 state, error_code, message = Status.CANCELLED, None, None
             except PrerequisiteError as exc:
                 state, error_code, message = Status.PAUSED, "PREREQUISITE", str(exc)

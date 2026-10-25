@@ -19,7 +19,8 @@ a { color: #09675f; overflow-wrap: anywhere; } .muted { color: #52646b; }
 {% for limitation in analysis.limitations %}<p>{{ limitation }}</p>{% endfor %}
 {% for entry in entries %}
 <article><h2>Afirmação</h2><blockquote>{{ entry.claim.statement }}</blockquote>
-<p>Tempo: {{ entry.segment.start_time }}–{{ entry.segment.end_time }} s · Referência de interlocutor: {{ entry.segment.manual_speaker_id or entry.segment.speaker_id or 'Desconhecido' }}</p>
+<p>Tempo: {{ entry.segment.start_time }}–{{ entry.end_segment.end_time }} s · Referência de interlocutor: {{ entry.segment.manual_speaker_id or entry.segment.speaker_id or 'Desconhecido' }}</p>
+{% if entry.claim.transcript_context %}<details><summary>Contexto original da fala</summary><blockquote>{{ entry.claim.transcript_context }}</blockquote></details>{% endif %}
 <p>Contexto: {{ entry.claim.context }}</p>
 {% if entry.verdict %}<h3>{{ entry.verdict.classification }}</h3><p>{{ entry.verdict.reasoning }}</p>
 <p class="muted">Modelo: {{ entry.verdict.model }} · Prompt: {{ entry.verdict.prompt_version }}</p>

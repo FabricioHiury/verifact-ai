@@ -14,9 +14,14 @@ test("live local services: transcript, source citation and downloadable PDF", as
     page.getByRole("heading", { name: "Transcrição", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("O Brasil tem 26 estados e um distrito federal.", {
-      exact: true,
-    }),
+    page
+      .locator("section")
+      .filter({
+        has: page.getByRole("heading", { name: "Transcrição", exact: true }),
+      })
+      .getByText("O Brasil tem 26 estados e um distrito federal.", {
+        exact: true,
+      }),
   ).toBeVisible();
   await page.getByText(/Evidências e fontes/).click();
   await expect(

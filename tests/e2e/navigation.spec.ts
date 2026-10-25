@@ -13,7 +13,13 @@ test("dashboard and permission-aware upload without fabricated results", async (
   await expect(
     page.getByRole("button", { name: "Enviar e analisar" }),
   ).toBeDisabled();
-  await expect(page.getByText(/adaptador experimental Docker/)).toBeVisible();
+  await expect(
+    page.getByText(/Cole o link de um vídeo público do YouTube/),
+  ).toBeVisible();
+  await expect(page.getByLabel("Link do vídeo público")).toHaveAttribute(
+    "type",
+    "url",
+  );
   await page.getByRole("button", { name: "Enviar URL" }).click();
   await expect(page.getByText("Confirme a permissão de uso")).toBeVisible();
 });

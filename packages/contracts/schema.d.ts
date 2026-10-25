@@ -343,6 +343,11 @@ export interface components {
             id: string;
             /** Statement */
             statement: string;
+            /**
+             * Transcript Context
+             * @default
+             */
+            transcript_context: string;
             /** Context */
             context: string;
             /** Topic */

@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from typing import Any
 
 import httpx
@@ -16,6 +17,7 @@ from verifact.db import factory
 from verifact.models import (
     Analysis,
     Claim,
+    Classification,
     Evidence,
     MediaAsset,
     ProcessingCheckpoint,
@@ -30,13 +32,14 @@ from verifact.models import (
 )
 from verifact.storage import check_disk, local_path, publish
 
+from verifact_worker.ideas import MAX_IDEA_CHARS, SpeechPart, boundary, claim_span, passage
 from verifact_worker.media import PrerequisiteError, aligned_segments, chunks, probe, signature
 from verifact_worker.reasoning import (
     PROMPT_VERSION,
     Context,
     Critique,
     EvidenceAssessment,
-    ExtractedClaims,
+    IdeaClaims,
     Judgment,
     Queries,
     reason,
@@ -86,7 +89,8 @@ class Pipeline(Flow[PipelineState]):
             identity = self.identities
         return hashlib.sha256(
             json.dumps(
-                {"pipeline": "1", "prompt": PROMPT_VERSION, "settings": identity}, sort_keys=True
+                {"pipeline": "2-ideas", "prompt": PROMPT_VERSION, "settings": identity},
+                sort_keys=True,
             ).encode()
         ).hexdigest()
 
@@ -297,17 +301,30 @@ class Pipeline(Flow[PipelineState]):
         check_disk()
 
     @listen(ingest)
-    def transcribe(self) -> None:
-        self.stage("TRANSCRIBING")
+    def process_media(self) -> None:
+        cfg = settings()
+        for index in self.transcribe():
+            final = (
+                index * (cfg.whisper_chunk_seconds - cfg.whisper_chunk_overlap_seconds)
+                + cfg.whisper_chunk_seconds
+                >= self.state.duration
+            )
+            self.diarize(through_chunk=index, final=final)
+            self.extract(final=final)
+            self.verify()
+
+    def transcribe(self) -> Iterator[int]:
         cfg = settings()
         cfg.media_temp_dir.mkdir(parents=True, exist_ok=True)
-        self.unload_ollama()
         for index, offset, end in chunks(
             self.state.duration, cfg.whisper_chunk_seconds, cfg.whisper_chunk_overlap_seconds
         ):
+            self.stage("TRANSCRIBING")
             self.check_cancel()
             if self.done("TRANSCRIBING", str(index)):
+                yield index
                 continue
+            self.unload_ollama()
             check_disk(int((end - offset) * 32000))
             audio = cfg.media_temp_dir / f"{self.analysis_id}-{index}.wav"
             try:
@@ -371,9 +388,9 @@ class Pipeline(Flow[PipelineState]):
                     db.commit()
             finally:
                 audio.unlink(missing_ok=True)
+            yield index
 
-    @listen(transcribe)
-    def diarize(self) -> None:
+    def diarize(self, through_chunk: int | None = None, final: bool = True) -> None:
         self.stage("DIARIZING")
         cfg = settings()
         if self.done("DIARIZING", "all"):
@@ -397,6 +414,8 @@ class Pipeline(Flow[PipelineState]):
         for index, offset, end in chunks(
             self.state.duration, cfg.whisper_chunk_seconds, cfg.whisper_chunk_overlap_seconds
         ):
+            if through_chunk is not None and index > through_chunk:
+                break
             if self.done("DIARIZING", str(index)):
                 continue
             check_disk(int((end - offset) * 32000))
@@ -459,6 +478,8 @@ class Pipeline(Flow[PipelineState]):
                     db.commit()
             finally:
                 audio.unlink(missing_ok=True)
+        if not final:
+            return
         self.limitation(
             "Clusters de voz são locais a cada chunk; nomes e continuidade entre chunks exigem correção humana"
         )
@@ -466,49 +487,117 @@ class Pipeline(Flow[PipelineState]):
             self.save_checkpoint(db, "DIARIZING", "all")
             db.commit()
 
-    @listen(diarize)
-    def extract(self) -> None:
+    def extract(self, final: bool = True) -> None:
         self.stage("EXTRACTING_CLAIMS")
-        last = 0.0
-        last_id = ""
-        while True:
-            with factory()() as db:
-                segment = db.scalar(
-                    select(TranscriptSegment)
-                    .where(
-                        TranscriptSegment.analysis_id == self.analysis_id,
-                        (TranscriptSegment.start_time > last)
-                        | (
-                            (TranscriptSegment.start_time == last)
-                            & (TranscriptSegment.id > last_id)
-                        ),
-                    )
-                    .order_by(TranscriptSegment.start_time, TranscriptSegment.id)
-                    .limit(1)
+        with factory()() as db:
+            cursor = db.scalar(
+                select(ProcessingCheckpoint)
+                .where(
+                    ProcessingCheckpoint.analysis_id == self.analysis_id,
+                    ProcessingCheckpoint.stage == "IDEAS",
                 )
-                if segment is None:
-                    break
-                segment_id, text = segment.id, segment.text
-                last, last_id = segment.start_time, segment.id
-            if self.done("EXTRACTING_CLAIMS", segment_id):
-                continue
+                .order_by(ProcessingCheckpoint.created_at.desc())
+                .limit(1)
+            )
+            query = select(TranscriptSegment).where(
+                TranscriptSegment.analysis_id == self.analysis_id
+            )
+            if cursor:
+                self.done("IDEAS", cursor.unit)
+                anchor = db.get(TranscriptSegment, cursor.unit)
+                if anchor is None:
+                    raise PrerequisiteError("Checkpoint sem trecho de origem")
+                query = query.where(
+                    (TranscriptSegment.start_time > anchor.start_time)
+                    | (
+                        (TranscriptSegment.start_time == anchor.start_time)
+                        & (TranscriptSegment.id > anchor.id)
+                    )
+                )
+            rows = db.scalars(
+                query.order_by(
+                    TranscriptSegment.start_time, TranscriptSegment.id
+                ).execution_options(yield_per=20)
+            )
+            parts = (
+                SpeechPart(
+                    s.id,
+                    s.text,
+                    s.start_time,
+                    s.end_time,
+                    s.manual_speaker_id or s.speaker_id,
+                    s.chunk,
+                )
+                for s in rows
+            )
+            self.extract_passages(parts, final=final)
+
+    def extract_passages(self, parts: Iterator[SpeechPart], *, final: bool) -> None:
+        pending: list[SpeechPart] = []
+        length = 0
+        overflow = False
+        current = next(parts, None)
+        while current is not None:
             self.check_cancel()
+            following = next(parts, None)
+            length += len(current.text) + 1
+            overflow = overflow or length > MAX_IDEA_CHARS
+            if not overflow:
+                pending.append(current)
+            # Chunk-local voice labels cannot establish a speaker change across chunks.
+            changed_voice = (
+                following is not None
+                and current.chunk == following.chunk
+                and current.speaker != following.speaker
+            )
+            closed = boundary(current, following)
+            terminal = following is None and final
+            if not (changed_voice or closed or terminal) or (following is None and not final):
+                current = following
+                continue
             extracted_claims = []
-            for start_offset in range(0, len(text), 1500):
-                self.check_cancel()
+            complete = False
+            if not overflow:
                 extracted, _ = reason(
                     self.analysis_id,
                     "ClaimExtractorAgent",
-                    "Extraia afirmações atômicas verificáveis, com texto EXATO contínuo. Opiniões/promessas: checkable=false. Máximo "
+                    "Decida se a ideia foi concluída no trecho, usando também a continuação. "
+                    "Espere qualificações, correções, comparações e conclusões; pontuação sozinha não basta. "
+                    "Se incompleta, complete=false e claims=[]. Se completa, complete=true e extraia "
+                    "afirmações atômicas com texto EXATO contínuo de transcript, nunca de following. "
+                    "Não junte falas de interlocutores diferentes. Use checkable=true para afirmações "
+                    "factuais testáveis, inclusive contagens, datas e dados geográficos. Não ter fontes "
+                    "ou faltar contexto NÃO torna uma afirmação não verificável. Use checkable=false "
+                    "somente para opiniões subjetivas, promessas e previsões. Máximo "
                     + str(settings().max_claims_per_batch),
-                    {"transcript": text[start_offset : start_offset + 1700]},
-                    ExtractedClaims,
+                    {
+                        "transcript": passage(pending),
+                        "following": following.text[:500] if following else "",
+                        "end_of_media": terminal,
+                    },
+                    IdeaClaims,
                 )
-                extracted_claims.extend(extracted.claims[: settings().max_claims_per_batch])
+                complete = extracted.complete
+                if complete:
+                    extracted_claims = extracted.claims[: settings().max_claims_per_batch]
+            if not complete and not (changed_voice or terminal or overflow):
+                current = following
+                continue
+            if not complete:
+                self.limitation(
+                    "Ideia incompleta ou maior que o contexto disponível não foi pesquisada; requer revisão humana"
+                )
             with factory()() as db:
                 for claim in extracted_claims:
-                    if claim.statement not in text:
-                        raise ValueError("Afirmação gerada não corresponde à transcrição original")
+                    try:
+                        segment_id, end_segment_id = claim_span(pending, claim.statement)
+                    except ValueError:
+                        if claim.statement not in passage(pending):
+                            raise
+                        self.limitation(
+                            "Afirmação entre vozes distintas exige revisão humana e não foi pesquisada"
+                        )
+                        continue
                     if not db.scalar(
                         select(Claim).where(
                             Claim.analysis_id == self.analysis_id,
@@ -520,13 +609,16 @@ class Pipeline(Flow[PipelineState]):
                             Claim(
                                 analysis_id=self.analysis_id,
                                 segment_id=segment_id,
+                                end_segment_id=end_segment_id,
+                                transcript_context=passage(pending),
                                 **claim.model_dump(),
                             )
                         )
-                self.save_checkpoint(db, "EXTRACTING_CLAIMS", segment_id)
+                self.save_checkpoint(db, "IDEAS", current.id)
                 db.commit()
+            pending, length, overflow = [], 0, False
+            current = following
 
-    @listen(extract)
     def verify(self) -> None:
         from verifact.models import ResearchQuery
 
@@ -545,11 +637,27 @@ class Pipeline(Flow[PipelineState]):
                 claim = db.get(Claim, claim_id)
                 assert claim
                 statement, checkable = claim.statement, claim.checkable
+                transcript_context = claim.transcript_context
+            if not checkable:
+                judgment = validate_judgment(
+                    Judgment(
+                        classification=Classification.NOT_CHECKABLE,
+                        reasoning="Proposição não verificável no momento",
+                        evidence_ids=[],
+                        limitations=[
+                            "A identificação do tipo de afirmação pelo modelo requer revisão humana"
+                        ],
+                    ),
+                    {},
+                    False,
+                )
+                self.record_verdict(claim_id, judgment, "deterministic:not-checkable-v1")
+                continue
             context, _ = reason(
                 self.analysis_id,
                 "ContextAnalystAgent",
                 "Liste contexto necessário, datas, população, métricas, geografia e ambiguidades; não preencha fatos desconhecidos",
-                statement,
+                {"statement": statement, "transcript_context": transcript_context},
                 Context,
             )
             with factory()() as db:
@@ -648,7 +756,11 @@ class Pipeline(Flow[PipelineState]):
                             not assessment.excerpt.strip()
                             or assessment.excerpt not in document.text
                         ):
-                            raise ValueError("Excerto não existe no documento recuperado")
+                            outcome += "; documento não selecionado: excerto gerado não é literal"
+                            self.limitation(
+                                "Excerto não literal gerado pelo modelo foi rejeitado; não foi usado como evidência"
+                            )
+                            continue
                         with factory()() as db:
                             persisted_source = db.get(Source, source_id)
                             assert persisted_source
@@ -694,6 +806,20 @@ class Pipeline(Flow[PipelineState]):
                 coverage_complete = len(data) <= 6 and all(
                     len(ev.excerpt) <= 400 for ev in evidence
                 )
+            if not evidence:
+                judgment = validate_judgment(
+                    Judgment(
+                        classification=Classification.INCONCLUSIVE,
+                        reasoning="Nenhuma evidência admissível foi recuperada",
+                        evidence_ids=[],
+                        limitations=[],
+                    ),
+                    {},
+                    True,
+                )
+                self.record_verdict(claim_id, judgment, "deterministic:insufficient-evidence-v1")
+                self.stage("RESEARCHING")
+                continue
             critique, _ = reason(
                 self.analysis_id,
                 "EvidenceCriticAgent",
@@ -720,20 +846,23 @@ class Pipeline(Flow[PipelineState]):
                 critique.conflicting,
                 coverage_complete=coverage_complete,
             )
-            with factory()() as db:
-                db.add(
-                    Verdict(
-                        claim_id=claim_id,
-                        model=model,
-                        prompt_version=PROMPT_VERSION,
-                        **judgment.model_dump(mode="json"),
-                    )
-                )
-                self.save_checkpoint(db, "VERIFYING", claim_id)
-                db.commit()
+            self.record_verdict(claim_id, judgment, model)
             self.stage("RESEARCHING")
 
-    @listen(verify)
+    def record_verdict(self, claim_id: str, judgment: Judgment, model: str) -> None:
+        with factory()() as db:
+            db.add(
+                Verdict(
+                    claim_id=claim_id,
+                    model=model,
+                    prompt_version=PROMPT_VERSION,
+                    **judgment.model_dump(mode="json"),
+                )
+            )
+            self.save_checkpoint(db, "VERIFYING", claim_id)
+            db.commit()
+
+    @listen(process_media)
     def report(self) -> None:
         from verifact_worker.reports import generate
 

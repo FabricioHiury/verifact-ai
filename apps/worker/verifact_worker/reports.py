@@ -72,6 +72,11 @@ def generate(analysis_id: str) -> None:
                 .execution_options(yield_per=20)
             ):
                 segment = db.get(TranscriptSegment, claim.segment_id)
+                end_segment = (
+                    db.get(TranscriptSegment, claim.end_segment_id)
+                    if claim.end_segment_id
+                    else segment
+                )
                 verdict = db.scalar(select(Verdict).where(Verdict.claim_id == claim.id))
                 evidence = list(
                     db.execute(
@@ -86,6 +91,7 @@ def generate(analysis_id: str) -> None:
                 yield {
                     "claim": claim,
                     "segment": segment,
+                    "end_segment": end_segment,
                     "verdict": verdict,
                     "evidence": evidence,
                     "sources": sources,

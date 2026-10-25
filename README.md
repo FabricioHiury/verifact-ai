@@ -10,16 +10,26 @@ An open-source, AI-powered fact-checking platform that analyzes political debate
 
 **Idioma / Language:** [Português (Brasil)](#pt-br) | [English (US)](#en-us)
 
-**Status: EM IMPLEMENTAÇÃO / AINDA NÃO VALIDADO DE PONTA A PONTA.** A infraestrutura Docker, a API, o worker e a interface têm código inicial. As seções abaixo preservam a especificação; existência de código não significa funcionalidade validada. Modelos e fluxo real completo ainda exigem verificação. Não há benchmarks de memória ou precisão.
+**Status: MVP EXPERIMENTAL / VALIDAÇÃO PARCIAL.** Infraestrutura Docker, API, worker e interface estão implementados. Uma amostra curta percorreu transcrição, diarização local, admissão de ideia completa, pesquisa real e relatório HTML/PDF após retomada. Seu resultado foi `INCONCLUSIVE`: excertos não literais propostos pelo modelo foram rejeitados. Isso valida execução e proteções, não precisão factual representativa. Não há benchmarks de memória ou precisão.
 
 ### Estado operacional verificado
 
 - **Verificado:** infraestrutura Docker com health checks, migrations PostgreSQL, API e Celery conectados, upload/hash/FFprobe/MinIO, transcrição real curta com MLX, retomada de checkpoint e pausa honesta por falta do token de diarização.
-- **Verificado separadamente:** busca SearXNG e documento real do IBGE; build Next.js, testes de interface e navegação; renderização PDF com WeasyPrint e bibliotecas nativas configuradas.
+- **Verificado separadamente:** Community-1 executado localmente em amostra curta, com um cluster; busca SearXNG e documento real do IBGE; build Next.js, testes de interface e navegação; renderização PDF com WeasyPrint e bibliotecas nativas configuradas.
 - **Experimental:** sete agentes CrewAI, avaliação completa com Ollama, relatório da análise e comportamento em mídias longas. Código e testes sintéticos não equivalem a validação factual real.
-- **Pendente:** validação completa com Community-1 (requer aceite e token), validação de downloads públicos nas três plataformas, extração de documentos PDF externos e benchmark representativo de qualidade/memória.
+- **Pendente:** avaliação representativa do Community-1 com múltiplas vozes e mídia longa, validação de downloads públicos nas três plataformas, extração de documentos PDF externos e benchmark representativo de qualidade/memória.
 
 O Colima foi configurado com 4 GB por autorização do mantenedor; 2 GB encerravam o runner por falta de memória. Ollama usa CPU no Docker/macOS. Não se garante que toda carga caiba no Mac de 8 GB. Veja o [registro de validação](docs/VALIDATION.md) e o [guia de execução](docs/architecture/operations.md).
+
+### Links do YouTube e vídeos longos — comportamento atual
+
+Na tela **Nova análise**, cole o link público do YouTube e confirme a permissão de processamento. O adaptador baixa somente o áudio necessário em um container isolado, normaliza para MP3 e encaminha ao mesmo fluxo local dos uploads. Nesta instalação ele está habilitado. Em uma instalação nova, execute `make setup-social`, defina `SOCIAL_DOWNLOAD_ENABLED=true` no `.env` e reinicie o worker. O yt-dlp usa Node.js e seu componente EJS instalados na imagem; não baixa scripts adicionais em tempo de execução. Acesso privado, login, DRM e bloqueios da plataforma não são contornados.
+
+Um download real de *Big Buck Bunny*, do canal Blender, foi concluído com MP3 e SHA-256. Isso valida obtenção e normalização, não a transcrição integral desse vídeo nem uma checagem factual. TikTok e Instagram continuam experimentais.
+
+O fluxo atual alterna **transcrição → diarização → análise de ideias completas → pesquisa** por chunk, sem aguardar toda a mídia. Um vídeo de duas horas gera 42 chunks de até 180 segundos, com 5 segundos de sobreposição. A fronteira do chunk não encerra uma ideia: a cauda incompleta permanece no banco e recebe os próximos trechos. Pontuação ou uma pausa de pelo menos 1,5 segundo propõem uma fronteira, conectivos de correção mantêm a continuação e uma saída estruturada do LLM precisa confirmar a conclusão antes de liberar afirmações para busca. Ideias ainda incompletas ao final, maiores que o contexto disponível ou citações que atravessam vozes distintas ficam sem pesquisa, com limitação explícita. Contexto original e timestamps de início/fim são preservados na interface e no relatório. Essa heurística não garante compreensão perfeita nem aumento de precisão medido. Checagem e transcrição **não rodam simultaneamente**: os modelos se alternam, com uma operação pesada por vez. Veja o [ADR 004](docs/adr/004-incremental-complete-ideas.md).
+
+A transcrição usa áudio em velocidade original. Whisper não precisa aguardar o áudio em tempo real. Acelerar para 1,25× ou 1,5× pode alterar reconhecimento de nomes, números e timestamps; não há garantia de ganho proporcional ou qualidade equivalente. Qualquer modo acelerado requer avaliação comparativa e remapeamento para o tempo original antes de ser habilitado.
 
 ### Motivação, objetivos e público
 
@@ -50,11 +60,15 @@ flowchart TD
     E --> F[Liberar Whisper]
     F --> G[Diarização local]
     G --> H[Liberar pyannote e alinhar timestamps]
-    H --> J[Extrair afirmações e analisar contexto]
-    J --> K[Planejar buscas e recuperar documentos reais]
+    H --> J[Aguardar ideia completa e extrair afirmações]
+    J --> Q{Ideia completa?}
+    Q -->|Sim| K[Planejar buscas e recuperar documentos reais]
+    Q -->|Ainda não| P
     K --> L[Criticar evidências e buscar contrapontos]
     L --> M[Aplicar rubrica por afirmação]
-    M --> N[Relatório HTML e PDF com fontes e limites]
+    M --> P{Há mais mídia?}
+    P -->|Sim| D
+    P -->|Não| N[Relatório HTML e PDF com fontes e limites]
     N -.-> I[Correção manual opcional de interlocutores]
     I -.-> N
     D -.-> O[Persistir progresso para retomada]
@@ -263,16 +277,26 @@ Essas limitações aparecerão no relatório, com possibilidade de `INCONCLUSIVE
 
 **Idioma / Language:** [Português (Brasil)](#pt-br) | [English (US)](#en-us)
 
-**Status: IMPLEMENTATION IN PROGRESS / NOT YET VALIDATED END TO END.** Docker infrastructure, API, worker, and UI have initial code. Sections below preserve the specification; code existence does not imply verified functionality. Models and the full live pipeline still require validation. There are no memory or accuracy benchmarks.
+**Status: EXPERIMENTAL MVP / PARTIAL VALIDATION.** Docker infrastructure, API, worker, and UI are implemented. A short sample completed transcription, local diarization, complete-idea admission, real research, and HTML/PDF reporting after resume. Its outcome was `INCONCLUSIVE`: nonliteral excerpts proposed by the model were rejected. This validates execution and safeguards, not representative factual accuracy. There are no memory or accuracy benchmarks.
 
 ### Verified operational status
 
 - **Verified:** healthy Docker infrastructure, PostgreSQL migrations, connected API/Celery, upload/hash/FFprobe/MinIO, real short MLX transcription, checkpoint resume, and an honest pause when diarization credentials are missing.
-- **Verified separately:** SearXNG search and a real IBGE document; Next.js build, UI/navigation tests; PDF rendering with configured native WeasyPrint libraries.
+- **Verified separately:** local Community-1 execution on a short sample, with one cluster; SearXNG search and a real IBGE document; Next.js build, UI/navigation tests; PDF rendering with configured native WeasyPrint libraries.
 - **Experimental:** seven-agent CrewAI verification, complete Ollama assessment, analysis report generation, and long-media behavior. Code and synthetic tests are not real factual validation.
-- **Pending:** complete Community-1 validation (terms acceptance/token required), validated public downloads across all three platforms, extraction of external PDF documents, and representative quality/memory benchmarks.
+- **Pending:** representative Community-1 evaluation with multiple voices and long media, validated public downloads across all three platforms, extraction of external PDF documents, and representative quality/memory benchmarks.
 
 Colima was configured with 4 GB with maintainer approval; 2 GB killed the model runner due to memory pressure. Ollama uses CPU in Docker on macOS. The full workload is not guaranteed to fit an 8 GB Mac. See the [validation ledger](docs/VALIDATION.md) and [operations guide](docs/architecture/operations.md).
+
+### YouTube links and long videos — current behavior
+
+On **Nova análise**, paste a public YouTube link and confirm permission to process it. The isolated downloader retrieves audio, normalizes it to MP3, and uses the same local pipeline as uploads. It is enabled on this installation. On a fresh installation, run `make setup-social`, set `SOCIAL_DOWNLOAD_ENABLED=true` in `.env`, and restart the worker. Node.js and yt-dlp's EJS component are installed in the image; no extra runtime scripts are downloaded. Login, DRM, private access, and platform restrictions are not bypassed.
+
+A real download of Blender's *Big Buck Bunny* completed with MP3 output and SHA-256. This validates retrieval and normalization, not transcription of the whole linked video or factual verification. TikTok and Instagram remain experimental.
+
+The current pipeline alternates **transcription → diarization → complete-idea extraction → research** per chunk, without waiting for the whole medium. Two hours produce 42 chunks of up to 180 seconds with a 5-second overlap. Chunk boundaries do not close ideas: unfinished tails remain in the database and receive following segments. Punctuation or a pause of at least 1.5 seconds proposes boundaries, correction connectors retain continuations, and structured local-model output must confirm completion before admitting claims to research. Ideas still incomplete at media end, exceeding the context window, or quotes spanning distinct voices are withheld with explicit limitations. Original context and start/end timestamps appear in the interface and reports. This heuristic does not guarantee perfect understanding or measured accuracy gains. Transcription and verification **do not run simultaneously**: models alternate, with one heavyweight operation at a time. See [ADR 004](docs/adr/004-incremental-complete-ideas.md).
+
+Transcription uses original-speed audio. Whisper need not wait for real-time playback. Applying 1.25× or 1.5× tempo may affect names, numbers, and timestamps; neither proportional speed gains nor equivalent accuracy are established. Accelerated transcription requires comparative evaluation and original-timeline remapping before enabling it.
 
 ### Motivation, goals, and audience
 
@@ -303,11 +327,15 @@ flowchart TD
     E --> F[Release Whisper]
     F --> G[Local diarization]
     G --> H[Release pyannote and align timestamps]
-    H --> J[Extract claims and analyze context]
-    J --> K[Plan searches and retrieve real documents]
+    H --> J[Wait for complete ideas and extract claims]
+    J --> Q{Complete idea?}
+    Q -->|Yes| K[Plan searches and retrieve real documents]
+    Q -->|Not yet| P
     K --> L[Critique evidence and search for counterevidence]
     L --> M[Apply the rubric to each claim]
-    M --> N[HTML and PDF report with sources and limitations]
+    M --> P{More media?}
+    P -->|Yes| D
+    P -->|No| N[HTML and PDF report with sources and limitations]
     N -.-> I[Optional manual speaker correction]
     I -.-> N
     D -.-> O[Persist progress for resume]

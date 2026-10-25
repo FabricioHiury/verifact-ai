@@ -1592,6 +1592,11 @@
             "type": "string",
             "title": "Statement"
           },
+          "transcript_context": {
+            "type": "string",
+            "title": "Transcript Context",
+            "default": ""
+          },
           "context": {
             "type": "string",
             "title": "Context"

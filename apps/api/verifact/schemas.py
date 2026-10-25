@@ -100,6 +100,7 @@ class ResearchQueryOut(ORMModel):
 class ClaimOut(BaseModel):
     id: str
     statement: str
+    transcript_context: str = ""
     context: str
     topic: str
     start_time: float

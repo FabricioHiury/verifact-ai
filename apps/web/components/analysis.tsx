@@ -36,6 +36,16 @@ function ClaimCard({
         </button>
       </div>
       <h3 className="text-lg font-semibold">“{claim.statement}”</h3>
+      {claim.transcript_context && (
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer font-medium">
+            Contexto original da fala
+          </summary>
+          <blockquote className="mt-2 border-l-2 border-slate-300 pl-3">
+            {claim.transcript_context}
+          </blockquote>
+        </details>
+      )}
       <p className="mt-3 text-sm text-slate-600">{claim.context}</p>
       {claim.verdict && (
         <>

@@ -375,6 +375,11 @@ def claim_view(db: Session, claim: Claim) -> ClaimOut:
     segment = db.get(TranscriptSegment, claim.segment_id)
     if segment is None:
         raise HTTPException(409, "Trecho de origem ausente")
+    end_segment = (
+        db.get(TranscriptSegment, claim.end_segment_id) if claim.end_segment_id else segment
+    )
+    if end_segment is None or end_segment.analysis_id != claim.analysis_id:
+        raise HTTPException(409, "Trecho final de origem ausente")
     verdict = db.scalar(select(Verdict).where(Verdict.claim_id == claim.id))
     evidence = []
     for ev, source in db.execute(
@@ -400,10 +405,11 @@ def claim_view(db: Session, claim: Claim) -> ClaimOut:
     return ClaimOut(
         id=claim.id,
         statement=claim.statement,
+        transcript_context=claim.transcript_context,
         context=claim.context,
         topic=claim.topic,
         start_time=segment.start_time,
-        end_time=segment.end_time,
+        end_time=end_segment.end_time,
         speaker_id=segment.manual_speaker_id or segment.speaker_id,
         verdict=VerdictOut.model_validate(verdict) if verdict else None,
         evidence=evidence,
@@ -435,7 +441,11 @@ def claims(
     limit: int = Query(100, ge=1, le=500),
 ) -> list[ClaimOut]:
     get_analysis(db, id)
-    query = select(Claim).join(TranscriptSegment).where(Claim.analysis_id == id)
+    query = (
+        select(Claim)
+        .join(TranscriptSegment, Claim.segment_id == TranscriptSegment.id)
+        .where(Claim.analysis_id == id)
+    )
     if classification:
         query = query.join(Verdict).where(Verdict.classification == classification)
     if speaker:

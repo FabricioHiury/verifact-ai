@@ -128,6 +128,8 @@ Inspect MP3/MP4 content, bound streaming and validate with FFprobe; extensions a
 
 Start with 180-second chunks and 5-second overlap. Persist chunk identities, offsets and model metadata. Test deduplication against repeated words and silence, not just ideal overlap. Quotes must reference original spans rather than silent paraphrases. Version corrections and explicitly invalidate affected downstream artifacts.
 
+Audio chunks are resource boundaries, not logical claim boundaries. Alternate chunk transcription/diarization with verification of complete ideas, without concurrent heavyweight models. Retain unfinished tails durably across chunks; require structured semantic completion before researching extracted claims. Preserve the original passage and start/end segment provenance. Do not silently split oversized or incomplete ideas into context-free research queries; disclose withheld passages and uncertain speaker continuity.
+
 Diarization identifies voice clusters, not real identities. Reconcile labels between chunks; local labels are not globally stable speaker IDs. Represent overlap, unknown speakers and uncertain assignments. Record manual name corrections and reflect them in regenerated views/reports with provenance. Do not infer candidate identity from the LLM alone.
 
 Social retrieval is optional and best-effort. Use constrained yt-dlp only for permitted public access. Never bypass DRM, login, paywalls, private restrictions or rate limits; do not request account cookies to evade restrictions. Apply outbound checks to redirects, manifests and downloader requests. Disable an adapter that cannot enforce security rather than weakening policy.

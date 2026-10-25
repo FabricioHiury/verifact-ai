@@ -26,6 +26,7 @@ def isolated_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "report_output_dir", tmp_path / "reports")
     monkeypatch.setattr(config, "storage_backend", "filesystem")
     monkeypatch.setattr(config, "min_free_disk_mb", 0)
+    monkeypatch.setattr(config, "social_download_enabled", False)
 
 
 @pytest.fixture
