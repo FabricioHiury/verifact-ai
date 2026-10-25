@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8"><title>Verifact AI — Relatório</title>
+<style>
+@page { size: A4; margin: 18mm; @bottom-right { content: counter(page); } }
+body { font-family: sans-serif; color: #142a32; font-size: 10pt; line-height: 1.5; }
+h1 { font-size: 26pt; } h2 { border-top: 2px solid #168478; padding-top: 12px; }
+article { break-before: page; } blockquote { border-left: 3px solid #168478; padding-left: 12px; }
+a { color: #09675f; overflow-wrap: anywhere; } .muted { color: #52646b; }
+</style>
+<h1>Verifact AI</h1><h2>{{ analysis.title }}</h2>
+<p>Análise {{ analysis.id }} · Revisão {{ analysis.revision }} · {{ analysis.created_at }}</p>
+<p>{{ summary }}</p>
+{% if media %}<p>Mídia: {{ media.filename }} · {{ media.duration }} segundos<br>SHA-256 da mídia armazenada: {{ media.sha256 }}</p>{% endif %}
+<h2>Interlocutores</h2>
+{% for speaker in speakers %}<p>{{ speaker.cluster }}: {{ speaker.manual_name or 'Nome não atribuído' }}</p>{% endfor %}
+<p>Clusters representam vozes, não identidades comprovadas. Correções humanas são separadas dos resultados automáticos.</p>
+<h2>Metodologia e limitações</h2>
+<p>Transcrição local, extração de afirmações e pesquisa de documentos reais. Snippets e respostas de LLM não constituem evidência independente. Ausência de resultados não significa falsidade. Fontes institucionais também exigem avaliação de método e período. Não há ranking de candidatos, garantia de neutralidade ou certeza absoluta. Consulte os documentos originais.</p>
+{% for limitation in analysis.limitations %}<p>{{ limitation }}</p>{% endfor %}
+{% for entry in entries %}
+<article><h2>Afirmação</h2><blockquote>{{ entry.claim.statement }}</blockquote>
+<p>Tempo: {{ entry.segment.start_time }}–{{ entry.segment.end_time }} s · Referência de interlocutor: {{ entry.segment.manual_speaker_id or entry.segment.speaker_id or 'Desconhecido' }}</p>
+<p>Contexto: {{ entry.claim.context }}</p>
+{% if entry.verdict %}<h3>{{ entry.verdict.classification }}</h3><p>{{ entry.verdict.reasoning }}</p>
+<p class="muted">Modelo: {{ entry.verdict.model }} · Prompt: {{ entry.verdict.prompt_version }}</p>
+{% for limitation in entry.verdict.limitations %}<p>{{ limitation }}</p>{% endfor %}{% else %}<p>Avaliação ainda não concluída.</p>{% endif %}
+{% for evidence, source in entry.evidence %}
+<h3>{{ evidence.stance }} — {{ source.title }}</h3><blockquote>{{ evidence.excerpt }}</blockquote><p>{{ evidence.assessment }}</p>
+<p><a href="{{ source.url }}">{{ source.url }}</a><br>Publisher: {{ source.publisher }} · Tipo: {{ source.source_type }}<br>Publicação: {{ source.publication_date or 'Desconhecida' }} · Consulta: {{ source.retrieved_at }} · Período: {{ source.applicable_period or 'Não determinado' }}</p>
+{% endfor %}
+<h3>Documentos recuperados</h3><p>A presença nesta lista não indica apoio à afirmação. Consulte a avaliação de cada evidência.</p>
+{% for source in entry.sources %}<p><a href="{{ source.url }}">{{ source.title }}</a> · {{ source.publisher }}<br>Publicação: {{ source.publication_date or 'Desconhecida' }} · Consulta: {{ source.retrieved_at }}</p>{% endfor %}
+</article>{% endfor %}</html>

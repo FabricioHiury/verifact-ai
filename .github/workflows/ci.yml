@@ -1,0 +1,51 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: verifact_test
+          POSTGRES_USER: verifact
+          POSTGRES_PASSWORD: test-only-password
+        ports: ["5432:5432"]
+        options: --health-cmd="pg_isready -U verifact -d verifact_test" --health-interval=5s --health-timeout=3s --health-retries=15
+    env:
+      DATABASE_URL: postgresql+psycopg://verifact:test-only-password@localhost:5432/verifact_test
+      STORAGE_BACKEND: filesystem
+      APP_ENV: test
+      RUN_POSTGRES_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.5"
+      - run: uv sync --frozen
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg libpango-1.0-0 libpangoft2-1.0-0
+      - run: uv run ruff check apps scripts tests infrastructure/docker/downloader
+      - run: uv run mypy
+      - run: uv run alembic -c apps/api/alembic.ini upgrade head
+      - run: uv run alembic -c apps/api/alembic.ini check
+      - run: uv run pytest -m 'not live'
+      - run: uv run python scripts/export_openapi.py && git diff --exit-code packages/contracts/openapi.json
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.25.0"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec openapi-typescript packages/contracts/openapi.json -o packages/contracts/schema.d.ts && git diff --exit-code packages/contracts/schema.d.ts
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm --filter @verifact/web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e

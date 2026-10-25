@@ -10,7 +10,16 @@ An open-source, AI-powered fact-checking platform that analyzes political debate
 
 **Idioma / Language:** [Português (Brasil)](#pt-br) | [English (US)](#en-us)
 
-**Status: PLANNING / NOT YET IMPLEMENTED.** Este repositório contém a especificação inicial. Funcionalidades, diretórios, serviços e endpoints abaixo são planejados. Ainda não há aplicação executável, comandos de instalação disponíveis ou benchmarks.
+**Status: EM IMPLEMENTAÇÃO / AINDA NÃO VALIDADO DE PONTA A PONTA.** A infraestrutura Docker, a API, o worker e a interface têm código inicial. As seções abaixo preservam a especificação; existência de código não significa funcionalidade validada. Modelos e fluxo real completo ainda exigem verificação. Não há benchmarks de memória ou precisão.
+
+### Estado operacional verificado
+
+- **Verificado:** infraestrutura Docker com health checks, migrations PostgreSQL, API e Celery conectados, upload/hash/FFprobe/MinIO, transcrição real curta com MLX, retomada de checkpoint e pausa honesta por falta do token de diarização.
+- **Verificado separadamente:** busca SearXNG e documento real do IBGE; build Next.js, testes de interface e navegação; renderização PDF com WeasyPrint e bibliotecas nativas configuradas.
+- **Experimental:** sete agentes CrewAI, avaliação completa com Ollama, relatório da análise e comportamento em mídias longas. Código e testes sintéticos não equivalem a validação factual real.
+- **Pendente:** validação completa com Community-1 (requer aceite e token), validação de downloads públicos nas três plataformas, extração de documentos PDF externos e benchmark representativo de qualidade/memória.
+
+O Colima foi configurado com 4 GB por autorização do mantenedor; 2 GB encerravam o runner por falta de memória. Ollama usa CPU no Docker/macOS. Não se garante que toda carga caiba no Mac de 8 GB. Veja o [registro de validação](docs/VALIDATION.md) e o [guia de execução](docs/architecture/operations.md).
 
 ### Motivação, objetivos e público
 
@@ -20,7 +29,7 @@ O Verifact AI pretende tornar esse processo acessível e auditável na política
 
 Não se promete neutralidade perfeita nem certeza factual. O sistema não inferirá intenção política nem classificará políticos por honestidade. Avaliará afirmações individuais, com contexto, divergências e limitações. A verificação dos documentos originais continuará essencial.
 
-### Funcionalidades — PLANNED
+### Escopo funcional — em implementação
 
 - Interface moderna e acessível em português brasileiro; upload de MP3/MP4 por arrastar e soltar.
 - Envio opcional de URLs públicas de YouTube, TikTok e Instagram, quando permitido e tecnicamente viável.
@@ -41,12 +50,13 @@ flowchart TD
     E --> F[Liberar Whisper]
     F --> G[Diarização local]
     G --> H[Liberar pyannote e alinhar timestamps]
-    H --> I[Revisão manual de interlocutores]
-    I --> J[Extrair afirmações e analisar contexto]
+    H --> J[Extrair afirmações e analisar contexto]
     J --> K[Planejar buscas e recuperar documentos reais]
     K --> L[Criticar evidências e buscar contrapontos]
     L --> M[Aplicar rubrica por afirmação]
     M --> N[Relatório HTML e PDF com fontes e limites]
+    N -.-> I[Correção manual opcional de interlocutores]
+    I -.-> N
     D -.-> O[Persistir progresso para retomada]
     H -.-> O
     L -.-> O
@@ -67,7 +77,7 @@ flowchart LR
     J --> P
     J --> S
     J --> F[CrewAI Flow sequencial]
-    F --> O[Ollama nativo no host]
+    F --> O[Ollama em Docker]
     F --> M[Subprocessos de mídia e modelos]
     F --> Q[SearXNG autogerenciado]
     Q --> E[Mecanismos de busca configurados]
@@ -97,7 +107,7 @@ Três aplicações compartilharão o monorepo, sem microserviços adicionais por
 | Ferramentas | pnpm workspace, uv, Docker Compose quando apropriado, GitHub Actions |
 | Qualidade Python | pytest, Ruff, mypy |
 
-Versões exatas, identificadores de modelos, quantização e compatibilidade serão verificados em documentação oficial antes da implementação. Não há dependências instaladas ou runtimes fixados nesta fase. Não serão usados endpoints pagos de inferência nem LLMs hospedados.
+As dependências estão fixadas em `uv.lock` e `pnpm-lock.yaml`, com Python 3.12, Next.js 16.4.3 e React 19.3.1 nesta implementação. Novas dependências continuam exigindo verificação na documentação oficial. Não há inferência paga ou hospedada. CrewAI inclui SDKs de provedores como dependências transitivas; o código usa somente Ollama local, conforme [ADR 002](docs/adr/002-local-inference-and-upstream-dependencies.md).
 
 ### Arquitetura multiagente
 
@@ -161,13 +171,13 @@ tests/                  Integração, ponta a ponta e avaliações compartilhada
 docs/                   Guias, rubrica e decisões arquiteturais
 ```
 
-Esses diretórios ainda não foram criados. O worker reutilizará contratos Python do domínio da API sem importar inicialização HTTP. Contratos públicos do frontend serão gerados de OpenAPI, sem definições manuais paralelas.
+Os diretórios já existem. O worker reutiliza contratos Python do domínio da API sem importar inicialização HTTP. Tipos públicos do frontend são gerados de OpenAPI em `packages/contracts`, usados por um cliente tipado, sem definições manuais paralelas.
 
 Entidades previstas: `Analysis`, `MediaAsset`, `Speaker`, `TranscriptSegment`, `Claim`, `ResearchQuery`, `Source`, `Evidence`, `Verdict`, `AgentExecution`, `ProcessingCheckpoint` e `Report`. Relações ligarão análises à mídia, segmentos e interlocutores; afirmações aos segmentos; consultas às fontes; evidências e vereditos às afirmações; execuções, checkpoints e relatórios à versão da análise. O schema definitivo será decidido durante a implementação.
 
-### API planejada
+### API — implementação inicial
 
-Todos os endpoints são propostas, não funcionalidades implementadas. Schemas, IDs opacos, paginação e erros serão definidos em OpenAPI. Criação de análises deverá retornar `202 Accepted` com identificação e endereço de acompanhamento. Eventos serão inicialmente SSE, com consulta de status como recuperação.
+Os endpoints abaixo têm implementação inicial e schemas OpenAPI em `/docs`, com IDs opacos, paginação e erros estruturados. Criação retorna `202 Accepted`; a resposta identifica a análise, consultável pelo endpoint de status. Eventos usam SSE com consulta periódica de status como recuperação. A cobertura efetivamente executada está em [VALIDATION.md](docs/VALIDATION.md); downloads sociais são experimentais e exigem `make setup-social` e `SOCIAL_DOWNLOAD_ENABLED=true`.
 
 | Método | Endpoint | Finalidade |
 | --- | --- | --- |
@@ -194,7 +204,7 @@ Estados previstos: `QUEUED`, `RUNNING`, `PAUSED`, `CANCEL_REQUESTED`, `CANCELLED
 
 | Recurso | Padrão inicial planejado |
 | --- | --- |
-| Inferência | Ollama nativo no macOS; Qwen3 4B e fallback Qwen3 1.7B |
+| Inferência | Ollama em Docker no macOS; Qwen3 4B e fallback Qwen3 1.7B |
 | Transcrição | MLX Whisper Small e fallback Base |
 | Análises ativas | No máximo 1 em toda a instalação |
 | Operações pesadas | No máximo 1, incluindo inferência e mídia pesada |
@@ -209,11 +219,11 @@ Subprocessos por etapa liberarão recursos ao terminar. Antes de Whisper ou pyan
 
 ### Infraestrutura local e pré-requisitos planejados
 
-Ollama e MLX ficarão nativos no macOS. API e worker poderão executar no host, com PostgreSQL e Redis via Docker Compose. O perfil leve usará filesystem; MinIO será opcional. SearXNG será autogerenciado, e seu custo junto ao Docker entrará no orçamento de memória. Serviços e portas ficarão em localhost, sem autenticação no MVP.
+PostgreSQL, Redis, SearXNG, MinIO e Ollama são gerenciados por Docker Compose. MinIO é o armazenamento padrão; filesystem permanece disponível como alternativa leve. API, worker e frontend executam no host. MLX permanece nativo por depender do Metal no macOS. Ollama no Docker usa CPU no macOS, sem aceleração Metal. Serviços e portas ficam em localhost, sem autenticação no MVP. A mudança foi solicitada pelo mantenedor e está registrada no [ADR 001](docs/adr/001-docker-local-services.md).
 
 Uma instalação futura exigirá Git, Node.js/pnpm e Python/uv compatíveis, FFmpeg/FFprobe, Ollama e modelos selecionados. Docker com Compose atenderá aos serviços de infraestrutura. Dependências nativas do WeasyPrint e suporte de MLX/pyannote serão verificados para a plataforma. Pesos poderão exigir download inicial, aceite de termos e credenciais do distribuidor; isso não autoriza inferência hospedada.
 
-Não há comandos de instalação ou execução válidos neste momento. Versões, manifests, variáveis de ambiente, migrations e instruções reproduzíveis serão publicados conforme a implementação. Inferência local não significa operação inteiramente offline: pesquisa, obtenção de mídia e downloads iniciais exigem rede.
+Comandos e pré-requisitos atuais estão no [guia operacional](docs/architecture/operations.md). `make setup` prepara dependências e `.env`; `make infra-up` inicia serviços Docker; `make migrate` aplica migrations; `make setup-media` instala adaptadores; `make models-pull` baixa modelos; `make dev` inicia aplicações nativas. Inferência local não significa operação offline: pesquisa, obtenção de fontes e downloads iniciais exigem rede.
 
 ### Roadmap: cinco marcos
 
@@ -253,7 +263,16 @@ Essas limitações aparecerão no relatório, com possibilidade de `INCONCLUSIVE
 
 **Idioma / Language:** [Português (Brasil)](#pt-br) | [English (US)](#en-us)
 
-**Status: PLANNING / NOT YET IMPLEMENTED.** This repository contains the initial specification. Features, directories, services, and endpoints below are planned. There is no runnable application, available installation procedure, or benchmark yet.
+**Status: IMPLEMENTATION IN PROGRESS / NOT YET VALIDATED END TO END.** Docker infrastructure, API, worker, and UI have initial code. Sections below preserve the specification; code existence does not imply verified functionality. Models and the full live pipeline still require validation. There are no memory or accuracy benchmarks.
+
+### Verified operational status
+
+- **Verified:** healthy Docker infrastructure, PostgreSQL migrations, connected API/Celery, upload/hash/FFprobe/MinIO, real short MLX transcription, checkpoint resume, and an honest pause when diarization credentials are missing.
+- **Verified separately:** SearXNG search and a real IBGE document; Next.js build, UI/navigation tests; PDF rendering with configured native WeasyPrint libraries.
+- **Experimental:** seven-agent CrewAI verification, complete Ollama assessment, analysis report generation, and long-media behavior. Code and synthetic tests are not real factual validation.
+- **Pending:** complete Community-1 validation (terms acceptance/token required), validated public downloads across all three platforms, extraction of external PDF documents, and representative quality/memory benchmarks.
+
+Colima was configured with 4 GB with maintainer approval; 2 GB killed the model runner due to memory pressure. Ollama uses CPU in Docker on macOS. The full workload is not guaranteed to fit an 8 GB Mac. See the [validation ledger](docs/VALIDATION.md) and [operations guide](docs/architecture/operations.md).
 
 ### Motivation, goals, and audience
 
@@ -263,7 +282,7 @@ Verifact AI aims to make this process accessible and auditable for Brazilian pol
 
 The system does not promise perfect neutrality or factual certainty. It will not infer political intent or rate politicians by honesty. It will assess individual assertions, including context, disagreements, and limitations. Checking the original documents will remain essential.
 
-### Features — PLANNED
+### Feature scope — implementation in progress
 
 - Modern, accessible Brazilian Portuguese interface; drag-and-drop MP3/MP4 uploads.
 - Optional public YouTube, TikTok, and Instagram URLs, where permitted and technically feasible.
@@ -284,12 +303,13 @@ flowchart TD
     E --> F[Release Whisper]
     F --> G[Local diarization]
     G --> H[Release pyannote and align timestamps]
-    H --> I[Manual speaker review]
-    I --> J[Extract claims and analyze context]
+    H --> J[Extract claims and analyze context]
     J --> K[Plan searches and retrieve real documents]
     K --> L[Critique evidence and search for counterevidence]
     L --> M[Apply the rubric to each claim]
     M --> N[HTML and PDF report with sources and limitations]
+    N -.-> I[Optional manual speaker correction]
+    I -.-> N
     D -.-> O[Persist progress for resume]
     H -.-> O
     L -.-> O
@@ -310,7 +330,7 @@ flowchart LR
     J --> P
     J --> S
     J --> F[Sequential CrewAI Flow]
-    F --> O[Host-native Ollama]
+    F --> O[Ollama in Docker]
     F --> M[Media and model subprocesses]
     F --> Q[Self-hosted SearXNG]
     Q --> E[Configured search engines]
@@ -340,7 +360,7 @@ Three applications will share the monorepo, without additional microservices by 
 | Tooling | pnpm workspace, uv, Docker Compose where appropriate, GitHub Actions |
 | Python quality | pytest, Ruff, mypy |
 
-Exact versions, model identifiers, quantization, and compatibility will be verified against official documentation before implementation. Dependencies have not been installed and runtimes have not been pinned at this stage. Paid inference endpoints and hosted LLMs will not be used.
+Dependencies are locked in `uv.lock` and `pnpm-lock.yaml`, with Python 3.12, Next.js 16.4.3, and React 19.3.1 in this implementation. New dependencies still require official-documentation checks. No paid or hosted inference is used. CrewAI includes provider SDKs transitively; application inference uses only local Ollama, as recorded in [ADR 002](docs/adr/002-local-inference-and-upstream-dependencies.md).
 
 ### Multi-agent architecture
 
@@ -404,13 +424,13 @@ tests/                  Shared integration, end-to-end, and evaluation tests
 docs/                   Guides, rubric, and architecture decisions
 ```
 
-These directories have not been created. The worker will reuse API domain contracts in Python without importing HTTP startup. Public frontend contracts will be generated from OpenAPI rather than maintained in parallel manually.
+These directories now exist. The worker reuses API domain contracts in Python without importing HTTP startup. Public frontend types are generated from OpenAPI in `packages/contracts` and consumed by a typed client rather than maintained manually in parallel.
 
 Planned entities: `Analysis`, `MediaAsset`, `Speaker`, `TranscriptSegment`, `Claim`, `ResearchQuery`, `Source`, `Evidence`, `Verdict`, `AgentExecution`, `ProcessingCheckpoint`, and `Report`. Relationships will connect analyses to media, segments, and speakers; claims to segments; queries to sources; evidence and verdicts to claims; and executions, checkpoints, and reports to analysis versions. The final schema will be determined during implementation.
 
-### Planned API
+### API — initial implementation
 
-All endpoints are proposals, not implemented features. Schemas, opaque IDs, pagination, and errors will be defined in OpenAPI. Analysis creation should return `202 Accepted` with an identifier and tracking location. Events will initially use SSE, with status polling for recovery.
+The endpoints below have initial implementations and OpenAPI schemas at `/docs`, with opaque IDs, pagination, and structured errors. Creation returns `202 Accepted` and an analysis identifier for the status endpoint. Events use SSE with polling recovery. Executed coverage is recorded in [VALIDATION.md](docs/VALIDATION.md); social downloads are experimental and require `make setup-social` and `SOCIAL_DOWNLOAD_ENABLED=true`.
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
@@ -437,7 +457,7 @@ Planned states: `QUEUED`, `RUNNING`, `PAUSED`, `CANCEL_REQUESTED`, `CANCELLED`, 
 
 | Resource | Planned initial default |
 | --- | --- |
-| Inference | Native macOS Ollama; Qwen3 4B with Qwen3 1.7B fallback |
+| Inference | Docker-managed Ollama on macOS; Qwen3 4B with Qwen3 1.7B fallback |
 | Transcription | MLX Whisper Small with Base fallback |
 | Active analyses | Maximum 1 installation-wide |
 | Heavyweight operations | Maximum 1, including inference and heavy media processing |
@@ -452,11 +472,11 @@ Stage-specific subprocesses will release resources upon completion. Before Whisp
 
 ### Local infrastructure and planned prerequisites
 
-Ollama and MLX will run natively on macOS. The API and worker may run on the host, with PostgreSQL and Redis through Docker Compose. The lightweight profile will use filesystem storage; MinIO will be optional. SearXNG will be self-hosted, and its resource cost alongside Docker will count toward the memory budget. Services and ports will be restricted to localhost, without authentication in the MVP.
+PostgreSQL, Redis, SearXNG, MinIO, and Ollama are managed by Docker Compose. MinIO is the default storage backend; filesystem remains a lightweight alternative. API, worker, and frontend run on the host. MLX remains native because it requires macOS Metal. Ollama in Docker uses CPU on macOS, without Metal acceleration. Published ports are restricted to localhost, without authentication in the MVP. This maintainer-requested change is recorded in [ADR 001](docs/adr/001-docker-local-services.md).
 
 A future installation will require Git, compatible Node.js/pnpm and Python/uv versions, FFmpeg/FFprobe, Ollama, and selected models. Docker with Compose will provide infrastructure services. Native WeasyPrint dependencies and MLX/pyannote platform support will be verified. Weights may require an initial download, acceptance of terms, and distributor credentials; this does not authorize hosted inference.
 
-There are no valid installation or startup commands yet. Versions, manifests, environment variables, migrations, and reproducible instructions will be published during implementation. Local inference does not mean entirely offline operation: research, media retrieval, and initial downloads require network access.
+Current commands and prerequisites are in the [operations guide](docs/architecture/operations.md). `make setup` prepares dependencies and `.env`; `make infra-up` starts Docker services; `make migrate` applies migrations; `make setup-media` installs adapters; `make models-pull` downloads models; `make dev` starts native applications. Local inference does not imply offline operation: research, source retrieval, and initial downloads require network access.
 
 ### Roadmap: five milestones
 

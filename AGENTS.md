@@ -2,7 +2,7 @@
 
 ## Status, mission, and authority
 
-This repository is **PLANNING / NOT YET IMPLEMENTED**. README.md describes intended behavior, not a working application. The current documentation task authorizes only root README.md and AGENTS.md: no scaffolding, dependency installation, or application implementation. Future implementation requires a separate user task.
+This repository is **IMPLEMENTATION IN PROGRESS**. The user has authorized full implementation, superseding the earlier documentation-only restriction. README.md contains the architecture and must distinguish implemented code, verified behavior and remaining plans. Do not claim an operational pipeline without live validation.
 
 Build an open-source, local-first platform for examining individual factual assertions in Brazilian political media through transcription, real evidence retrieval, and transparent Brazilian Portuguese reports. Do not promise perfect neutrality or certainty, infer political intent, or rank candidates by honesty. Do not add hosted inference, paid search, identity recognition, campaign persuasion, or premature microservices.
 
@@ -17,7 +17,7 @@ Code state is evidence, not permission to override requirements. Read both root 
 
 ## Architecture and module ownership
 
-All paths below are planned. Create them only when required by an authorized working slice.
+The module ownership below applies to the current monorepo. Add files only when required by an authorized working slice.
 
 | Module | Ownership | Boundary |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ All paths below are planned. Create them only when required by an authorized wor
 
 Keep retrieval, verification, reporting, API transport, worker execution, and presentation separately testable within these applications. Separate modules are enough; avoid adding services solely to enforce boundaries expressible in code.
 
-Planned entities: `Analysis`, `MediaAsset`, `Speaker`, `TranscriptSegment`, `Claim`, `ResearchQuery`, `Source`, `Evidence`, `Verdict`, `AgentExecution`, `ProcessingCheckpoint`, `Report`. Analyses own processing lineage. Claims reference original transcript spans; evidence references retrieved material; verdicts reference claims and evidence. Version inputs and artifacts so corrections cannot silently change an existing report's factual basis.
+Domain entities: `Analysis`, `MediaAsset`, `Speaker`, `TranscriptSegment`, `Claim`, `ResearchQuery`, `Source`, `Evidence`, `Verdict`, `AgentExecution`, `ProcessingCheckpoint`, `Report`. Analyses own processing lineage. Claims reference original transcript spans; evidence references retrieved material; verdicts reference claims and evidence. Version inputs and artifacts so corrections cannot silently change an existing report's factual basis.
 
 ## Technology constraints
 
@@ -62,7 +62,7 @@ These are initial defaults requiring benchmarking, not guaranteed memory require
 | Audio chunks | 180 seconds, 5-second overlap |
 | Models | Qwen3 4B / 1.7B; Whisper Small / Base; Community-1 diarization |
 
-Run Ollama natively on macOS and accelerated MLX on the host. Use stage-specific subprocesses, bounded buffers, streaming file I/O, and cleanup on success, failure, timeout, and cancellation. Request Ollama model unloading before Whisper or pyannote; finish and release each heavy stage before another starts. Do not intentionally retain Ollama, Whisper, and pyannote heavyweight models simultaneously when avoidable. A running service does not imply permission to keep its model resident.
+Run Ollama, MinIO, PostgreSQL, Redis and SearXNG through Docker Compose, as explicitly requested by the user (ADR 001). Ollama is CPU-only in Docker on macOS; do not promise Metal acceleration there. Keep accelerated MLX native on the host because it requires macOS Metal. Use stage-specific subprocesses, bounded buffers, streaming file I/O, and cleanup on success, failure, timeout, and cancellation. Request Ollama model unloading before Whisper or pyannote; finish and release each heavy stage before another starts. Do not intentionally retain Ollama, Whisper, and pyannote heavyweight models simultaneously when avoidable. A running service does not imply permission to keep its model resident.
 
 Enforce global admission and exclusive heavy-stage ownership with durable coordination, such as PostgreSQL-backed ownership with heartbeat and safe stale-owner recovery. A solo worker cannot alone prevent accidental duplicate workers or task delivery. Do not release ownership while children still run. Maintain ownership during long operations and reconcile orphan processes before starting replacement work.
 
@@ -176,7 +176,7 @@ The following are **future conventions, not currently available commands**. Intr
 | uv | Managed Python dependencies; run tools through `uv run` in documented workspace |
 | Python checks | `uv run pytest`, `uv run ruff check .`, `uv run mypy .`; paths/config finalized later |
 | Alembic | Versioned migrations using documented application configuration |
-| Compose | Explicit infrastructure profile, filesystem default, optional MinIO |
+| Compose | Docker infrastructure including Ollama and MinIO by default; filesystem remains an explicit lightweight storage alternative |
 | Celery | Solo pool, concurrency 1; application import path documented when it exists |
 | Contracts | Reproducible OpenAPI export/client generation and drift check |
 | CI | GitHub Actions using verified local checks without paid services |

@@ -1,0 +1,14 @@
+{
+  "name": "verifact-ai", "private": true, "packageManager": "pnpm@10.25.0",
+  "scripts": {
+    "dev": "python3 scripts/dev.py",
+    "lint": "pnpm --filter @verifact/web lint",
+    "format": "pnpm exec prettier --write apps/web packages/contracts/client.ts",
+    "typecheck": "pnpm --filter @verifact/web typecheck",
+    "test": "pnpm --filter @verifact/web test",
+    "test:e2e": "pnpm --filter @verifact/web test:e2e",
+    "build": "pnpm --filter @verifact/web build",
+    "contracts": "python3 scripts/export_openapi.py && openapi-typescript packages/contracts/openapi.json -o packages/contracts/schema.d.ts"
+  },
+  "devDependencies": { "openapi-typescript": "^7.10.0", "prettier": "^3.6.0" }
+}
